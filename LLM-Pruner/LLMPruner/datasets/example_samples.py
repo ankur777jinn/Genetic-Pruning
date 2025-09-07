@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 
 def get_c4(tokenizer, n_samples, seq_len):
     traindata = load_dataset(
-        'allenai/c4', 'allenai--c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train', trust_remote_code=True
+        'allenai/c4', 'allenai--c4', data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, split='train'
     ).select(range(10000))
     
     tokenized_samples, history = [], []
@@ -24,7 +24,7 @@ def get_c4(tokenizer, n_samples, seq_len):
 
 def get_bookcorpus(tokenizer, n_samples, seq_len):
     traindata = load_dataset(
-        'bookcorpus', split='train'
+        'bookcorpus', split='train', trust_remote_code=True
     ).select(range(10000))
     
     tokenized_samples, history = [], []
