@@ -52,8 +52,6 @@ def main(args):
         with torch.no_grad():
             for prompt in prompts:
                 input_ids = tokenizer(prompt, return_tensors="pt")['input_ids'].to(args.device)
-                print("\n=== DEBUG: Input to generate ===")
-                print("Prompt shape:", input_ids.shape)
 
                 generation_output = model.generate(
                     input_ids=input_ids,
@@ -112,8 +110,7 @@ def main(args):
             },
             "root_module_types": None, 
             "root_instances": [model.model.layers[i].self_attn.q_proj for i in range(args.block_attention_layer_start, args.block_attention_layer_end)] +
-                              [model.model.layers[i].mlp.gate_proj for i in range(args.block_mlp_layer_start, args.block_mlp_layer_end)],
-            "round_to": 64,  # This ensures attention dimensions are multiples of head_dim
+                              [model.model.layers[i].mlp.gate_proj for i in range(args.block_mlp_layer_start, args.block_mlp_layer_end)]
         }
         logger.log("Pruning Attention Layer = {}".format(list(range(args.block_attention_layer_start, args.block_attention_layer_end))))
         logger.log("Pruning MLP Layer = {}".format(list(range(args.block_mlp_layer_start, args.block_mlp_layer_end))))
@@ -159,14 +156,6 @@ def main(args):
             # modify inferece-related attributes
             for layer in model.model.layers:
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-                # Check if num_key_value_groups attribute exists before setting it
-                if hasattr(layer.self_attn, 'num_key_value_groups'):
-                    num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
-                    layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
-                    layer.self_attn.num_key_value_heads = num_kv_heads
-                else:
-                    layer.self_attn.num_key_value_heads = num_kv_heads
-                    print(f"Warning: num_key_value_groups not found in layer {layer}")
 
         # Clean the gradient in the model
         model.zero_grad()
@@ -175,20 +164,6 @@ def main(args):
                 module.grad = None
 
         del pruner
-        print("\n=== DEBUG: Checking attention dimensions after pruning ===")
-        for i, layer in enumerate(model.model.layers):
-            q_out = layer.self_attn.q_proj.weight.shape[0]
-            k_out = layer.self_attn.k_proj.weight.shape[0]
-            v_out = layer.self_attn.v_proj.weight.shape[0]
-            nh = layer.self_attn.num_heads
-            hd = layer.self_attn.head_dim
-            print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
-                  f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
-        print("\n=== DEBUG: Verifying num_key_value_groups ===")
-        for i, layer in enumerate(model.model.layers):
-            print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
-                  f"num_kv_heads={layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim}, "
-                  f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
 
     elif args.channel_wise:
         kwargs = {
@@ -197,9 +172,7 @@ def main(args):
             "iterative_steps": args.iterative_steps,
             "ch_sparsity": args.pruning_ratio, # remove 50% channels, ResNet18 = {64, 128, 256, 512} => ResNet18_Half = {32, 64, 128, 256}
             "ignored_layers":[],
-            "round_to": model.config.num_attention_heads * 2,
-            
-
+            #"round_to": model.config.num_attention_heads * 2,
             "channel_groups": {
                 #layer.self_attn: layer.self_attn.num_heads for layer in model.model.layers
             },
@@ -209,7 +182,6 @@ def main(args):
             },
             "root_module_types": [LlamaRMSNorm, LlamaAttention],
         }
-        print("DEBUG round_to =", model.config.num_attention_heads * 2)
 
         pruner = tp.pruner.MetaPruner(
             model,
@@ -238,36 +210,13 @@ def main(args):
         for name, module in model.named_parameters():
             if 'weight' in name:
                 module.grad = None
-        
-        # modify inference-related attributes
+
+        # modify inferece-related attributes
         model.config.hidden_size = model.model.embed_tokens.weight.shape[1]
-        for layer in model.model.layers:
-            layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-            # Check if num_key_value_groups attribute exists before setting it
-            if hasattr(layer.self_attn, 'num_key_value_groups'):
-                num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
-                layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
-                layer.self_attn.num_key_value_heads = num_kv_heads
-            else:
-                layer.self_attn.num_key_value_heads = num_kv_heads
-                print(f"Warning: num_key_value_groups not found in layer {layer}")
+        model.zero_grad()
         
         del pruner
-        print("\n=== DEBUG: Checking attention dimensions after pruning ===")
-        for i, layer in enumerate(model.model.layers):
-            q_out = layer.self_attn.q_proj.weight.shape[0]
-            k_out = layer.self_attn.k_proj.weight.shape[0]
-            v_out = layer.self_attn.v_proj.weight.shape[0]
-            nh = layer.self_attn.num_heads
-            hd = layer.self_attn.head_dim
-            print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
-                  f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
-        print("\n=== DEBUG: Verifying num_key_value_groups ===")
-        for i, layer in enumerate(model.model.layers):
-            print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
-                  f"num_kv_heads={layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim}, "
-                  f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
-
+            
     elif args.layer_wise:
         model.model.layers = model.model.layers[:args.layer]
         after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -301,8 +250,6 @@ def main(args):
         with torch.no_grad():
             for prompt in prompts:
                 input_ids = tokenizer(prompt, return_tensors="pt")['input_ids'].to(args.eval_device)
-                print("\n=== DEBUG: Input to generate ===")
-                print("Prompt shape:", input_ids.shape)
 
                 generation_output = model.generate(
                     input_ids=input_ids,
