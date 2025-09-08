@@ -37,7 +37,7 @@ def main(args):
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    model = AutoModelForCausalLM.from_pretrained(
+    model = LlamaForCausalLM.from_pretrained(
         args.base_model,
         low_cpu_mem_usage=True if args.torch_version >=1.9 else False
     )
