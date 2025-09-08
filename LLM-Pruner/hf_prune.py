@@ -160,7 +160,8 @@ def main(args):
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
                 # Check if num_key_value_groups attribute exists before setting it
                 if hasattr(layer.self_attn, 'num_key_value_groups'):
-                    layer.num_key_value_groups = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+                    num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+                    layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
                 else:
                     print(f"Warning: num_key_value_groups not found in layer {layer}")
 
@@ -183,6 +184,7 @@ def main(args):
         print("\n=== DEBUG: Verifying num_key_value_groups ===")
         for i, layer in enumerate(model.model.layers):
             print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
+                  f"num_kv_heads={layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim}, "
                   f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
 
     elif args.channel_wise:
@@ -240,7 +242,8 @@ def main(args):
             layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
             # Check if num_key_value_groups attribute exists before setting it
             if hasattr(layer.self_attn, 'num_key_value_groups'):
-                layer.self_attn.num_key_value_groups = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+                num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+                layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
             else:
                 print(f"Warning: num_key_value_groups not found in layer {layer}")
         
@@ -257,6 +260,7 @@ def main(args):
         print("\n=== DEBUG: Verifying num_key_value_groups ===")
         for i, layer in enumerate(model.model.layers):
             print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
+                  f"num_kv_heads={layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim}, "
                   f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
 
     elif args.layer_wise:
