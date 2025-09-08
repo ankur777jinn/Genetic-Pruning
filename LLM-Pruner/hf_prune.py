@@ -52,6 +52,8 @@ def main(args):
         with torch.no_grad():
             for prompt in prompts:
                 input_ids = tokenizer(prompt, return_tensors="pt")['input_ids'].to(args.device)
+                print("\n=== DEBUG: Input to generate ===")
+                print("Prompt shape:", input_ids.shape)
 
                 generation_output = model.generate(
                     input_ids=input_ids,
@@ -164,6 +166,15 @@ def main(args):
                 module.grad = None
 
         del pruner
+    print("\n=== DEBUG: Checking attention dimensions after pruning ===")
+    for i, layer in enumerate(model.model.layers):
+        q_out = layer.self_attn.q_proj.weight.shape[0]
+        k_out = layer.self_attn.k_proj.weight.shape[0]
+        v_out = layer.self_attn.v_proj.weight.shape[0]
+        nh = layer.self_attn.num_heads
+        hd = layer.self_attn.head_dim
+        print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
+              f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
 
     elif args.channel_wise:
         kwargs = {
@@ -219,7 +230,16 @@ def main(args):
         model.zero_grad()
         
         del pruner
-            
+    print("\n=== DEBUG: Checking attention dimensions after pruning ===")
+    for i, layer in enumerate(model.model.layers):
+        q_out = layer.self_attn.q_proj.weight.shape[0]
+        k_out = layer.self_attn.k_proj.weight.shape[0]
+        v_out = layer.self_attn.v_proj.weight.shape[0]
+        nh = layer.self_attn.num_heads
+        hd = layer.self_attn.head_dim
+        print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
+              f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
+
     elif args.layer_wise:
         model.model.layers = model.model.layers[:args.layer]
         after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -253,6 +273,8 @@ def main(args):
         with torch.no_grad():
             for prompt in prompts:
                 input_ids = tokenizer(prompt, return_tensors="pt")['input_ids'].to(args.eval_device)
+                print("\n=== DEBUG: Input to generate ===")
+                print("Prompt shape:", input_ids.shape)
 
                 generation_output = model.generate(
                     input_ids=input_ids,
