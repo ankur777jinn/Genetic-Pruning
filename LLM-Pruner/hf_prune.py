@@ -166,15 +166,15 @@ def main(args):
                 module.grad = None
 
         del pruner
-    print("\n=== DEBUG: Checking attention dimensions after pruning ===")
-    for i, layer in enumerate(model.model.layers):
-        q_out = layer.self_attn.q_proj.weight.shape[0]
-        k_out = layer.self_attn.k_proj.weight.shape[0]
-        v_out = layer.self_attn.v_proj.weight.shape[0]
-        nh = layer.self_attn.num_heads
-        hd = layer.self_attn.head_dim
-        print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
-              f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
+        print("\n=== DEBUG: Checking attention dimensions after pruning ===")
+        for i, layer in enumerate(model.model.layers):
+            q_out = layer.self_attn.q_proj.weight.shape[0]
+            k_out = layer.self_attn.k_proj.weight.shape[0]
+            v_out = layer.self_attn.v_proj.weight.shape[0]
+            nh = layer.self_attn.num_heads
+            hd = layer.self_attn.head_dim
+            print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
+                  f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
 
     elif args.channel_wise:
         kwargs = {
