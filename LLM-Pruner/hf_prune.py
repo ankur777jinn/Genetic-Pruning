@@ -37,7 +37,7 @@ def main(args):
     )
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    model = LlamaForCausalLM.from_pretrained(
+    model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         low_cpu_mem_usage=True if args.torch_version >=1.9 else False
     )
@@ -113,6 +113,7 @@ def main(args):
             "root_module_types": None, 
             "root_instances": [model.model.layers[i].self_attn.q_proj for i in range(args.block_attention_layer_start, args.block_attention_layer_end)] +
                               [model.model.layers[i].mlp.gate_proj for i in range(args.block_mlp_layer_start, args.block_mlp_layer_end)]
+            "round_to": 64,  # This ensures attention dimensions are multiples of head_dim
         }
         logger.log("Pruning Attention Layer = {}".format(list(range(args.block_attention_layer_start, args.block_attention_layer_end))))
         logger.log("Pruning MLP Layer = {}".format(list(range(args.block_mlp_layer_start, args.block_mlp_layer_end))))
