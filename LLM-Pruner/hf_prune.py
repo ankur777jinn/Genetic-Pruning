@@ -173,6 +173,8 @@ def main(args):
             "ch_sparsity": args.pruning_ratio, # remove 50% channels, ResNet18 = {64, 128, 256, 512} => ResNet18_Half = {32, 64, 128, 256}
             "ignored_layers":[],
             "round_to": model.config.num_attention_heads * 2,
+            print("DEBUG round_to =", model.config.num_attention_heads * 2)
+
             "channel_groups": {
                 #layer.self_attn: layer.self_attn.num_heads for layer in model.model.layers
             },
