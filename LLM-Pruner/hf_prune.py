@@ -158,11 +158,11 @@ def main(args):
             # modify inferece-related attributes
             for layer in model.model.layers:
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-                # Check if num_key_value_heads attribute exists before setting it
-                if hasattr(layer.self_attn, 'num_key_value_heads'):
-                    layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+                # Check if num_key_value_groups attribute exists before setting it
+                if hasattr(layer.self_attn, 'num_key_value_groups'):
+                    layer.num_key_value_groups = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
                 else:
-                    print(f"Warning: num_key_value_heads not found in layer {layer}")
+                    print(f"Warning: num_key_value_groups not found in layer {layer}")
 
         # Clean the gradient in the model
         model.zero_grad()
@@ -180,10 +180,10 @@ def main(args):
             hd = layer.self_attn.head_dim
             print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
                   f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
-        print("\n=== DEBUG: Verifying num_key_value_heads ===")
+        print("\n=== DEBUG: Verifying num_key_value_groups ===")
         for i, layer in enumerate(model.model.layers):
             print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
-                  f"num_key_value_heads={layer.self_attn.num_key_value_heads}")
+                  f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
 
     elif args.channel_wise:
         kwargs = {
@@ -238,11 +238,11 @@ def main(args):
         model.config.hidden_size = model.model.embed_tokens.weight.shape[1]
         for layer in model.model.layers:
             layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
-            # Check if num_key_value_heads attribute exists before setting it
-            if hasattr(layer.self_attn, 'num_key_value_heads'):
-                layer.self_attn.num_key_value_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
+            # Check if num_key_value_groups attribute exists before setting it
+            if hasattr(layer.self_attn, 'num_key_value_groups'):
+                layer.self_attn.num_key_value_groups = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
             else:
-                print(f"Warning: num_key_value_heads not found in layer {layer}")
+                print(f"Warning: num_key_value_groups not found in layer {layer}")
         
         del pruner
         print("\n=== DEBUG: Checking attention dimensions after pruning ===")
@@ -254,10 +254,10 @@ def main(args):
             hd = layer.self_attn.head_dim
             print(f"Layer {i}: q_out={q_out}, k_out={k_out}, v_out={v_out}, "
                   f"num_heads={nh}, head_dim={hd}, product={nh*hd}")
-        print("\n=== DEBUG: Verifying num_key_value_heads ===")
+        print("\n=== DEBUG: Verifying num_key_value_groups ===")
         for i, layer in enumerate(model.model.layers):
             print(f"Layer {i}: num_heads={layer.self_attn.num_heads}, "
-                  f"num_key_value_heads={layer.self_attn.num_key_value_heads}")
+                  f"num_key_value_groups={layer.self_attn.num_key_value_groups}")
 
     elif args.layer_wise:
         model.model.layers = model.model.layers[:args.layer]
