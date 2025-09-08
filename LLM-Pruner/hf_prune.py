@@ -162,7 +162,9 @@ def main(args):
                 if hasattr(layer.self_attn, 'num_key_value_groups'):
                     num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
                     layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
+                    layer.self_attn.num_key_value_heads = num_kv_heads
                 else:
+                    layer.self_attn.num_key_value_heads = num_kv_heads
                     print(f"Warning: num_key_value_groups not found in layer {layer}")
 
         # Clean the gradient in the model
@@ -244,7 +246,9 @@ def main(args):
             if hasattr(layer.self_attn, 'num_key_value_groups'):
                 num_kv_heads = layer.self_attn.k_proj.weight.data.shape[0] // layer.self_attn.head_dim
                 layer.self_attn.num_key_value_groups = layer.self_attn.num_heads // num_kv_heads
+                layer.self_attn.num_key_value_heads = num_kv_heads
             else:
+                layer.self_attn.num_key_value_heads = num_kv_heads
                 print(f"Warning: num_key_value_groups not found in layer {layer}")
         
         del pruner
