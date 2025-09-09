@@ -105,6 +105,8 @@ def main(args):
             "consecutive_groups": {
                 layer.self_attn.q_proj: layer.self_attn.head_dim for layer in model.model.layers
             },
+            "round_to": model.config.num_attention_heads,   # ✅ add this
+
             "customized_pruners": {
                 LlamaRMSNorm: llama_pruner.hf_rmsnorm_pruner,
             },
@@ -156,6 +158,13 @@ def main(args):
             # modify inferece-related attributes
             for layer in model.model.layers:
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
+         
+         # ✅ Fix: update config after block-wise pruning
+        model.config.hidden_size = model.model.embed_tokens.embedding_dim
+        model.config.intermediate_size = model.model.layers[0].mlp.gate_proj.out_features
+        model.config.num_attention_heads = model.model.layers[0].self_attn.num_heads
+        model.config.num_key_value_groups = model.model.layers[0].self_attn.num_key_value_groups
+
 
         # Clean the gradient in the model
         model.zero_grad()
