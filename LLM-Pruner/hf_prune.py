@@ -6,7 +6,8 @@ import json
 import copy
 import random
 import argparse
-from typing import Tuple
+from typing import Tuple, Dict, Any
+import pickle
 
 import torch
 import numpy as np
@@ -25,6 +26,153 @@ def set_random_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+def save_pruning_results(model, importance_scores, pruning_info, save_path, logger):
+    """
+    Save pruned model weights and importance matrix in readable formats
+    
+    Args:
+        model: The pruned model
+        importance_scores: Dictionary containing importance scores for different layers
+        pruning_info: Dictionary containing pruning configuration and statistics
+        save_path: Base path for saving files
+        logger: Logger instance for logging
+    """
+    logger.log("Saving pruning results...")
+    
+    # Create directory if it doesn't exist
+    os.makedirs(save_path, exist_ok=True)
+    
+    # 1. Save model weights in organized format
+    weights_info = {}
+    layer_stats = {}
+    
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            # Convert to numpy for easier inspection
+            weight_np = param.data.cpu().numpy()
+            
+            weights_info[name] = {
+                'shape': weight_np.shape,
+                'dtype': str(weight_np.dtype),
+                'mean': float(np.mean(weight_np)),
+                'std': float(np.std(weight_np)),
+                'min': float(np.min(weight_np)),
+                'max': float(np.max(weight_np)),
+                'num_params': int(np.prod(weight_np.shape)),
+                'sparsity': float(np.sum(weight_np == 0) / weight_np.size) if weight_np.size > 0 else 0.0
+            }
+            
+            # Save actual weights
+            weight_file = os.path.join(save_path, f"{name.replace('.', '_')}_weights.npy")
+            np.save(weight_file, weight_np)
+            weights_info[name]['weight_file'] = weight_file
+    
+    # 2. Save importance scores if available
+    if importance_scores:
+        importance_file = os.path.join(save_path, "importance_scores.pkl")
+        with open(importance_file, 'wb') as f:
+            pickle.dump(importance_scores, f)
+        
+        # Create readable summary of importance scores
+        importance_summary = {}
+        for layer_name, scores in importance_scores.items():
+            if isinstance(scores, torch.Tensor):
+                scores_np = scores.cpu().numpy()
+                importance_summary[layer_name] = {
+                    'shape': scores_np.shape,
+                    'mean': float(np.mean(scores_np)),
+                    'std': float(np.std(scores_np)),
+                    'min': float(np.min(scores_np)),
+                    'max': float(np.max(scores_np)),
+                    'top_10_indices': np.argsort(scores_np.flatten())[-10:].tolist(),
+                    'bottom_10_indices': np.argsort(scores_np.flatten())[:10].tolist()
+                }
+                
+                # Save full importance scores as numpy array
+                imp_file = os.path.join(save_path, f"{layer_name.replace('.', '_')}_importance.npy")
+                np.save(imp_file, scores_np)
+                importance_summary[layer_name]['importance_file'] = imp_file
+    else:
+        importance_summary = {}
+    
+    # 3. Collect layer-wise statistics
+    for i, layer in enumerate(model.model.layers):
+        layer_name = f"layer_{i}"
+        layer_stats[layer_name] = {
+            'attention_heads': getattr(layer.self_attn, 'num_heads', 'N/A'),
+            'hidden_size': layer.self_attn.q_proj.weight.shape[1] if hasattr(layer.self_attn, 'q_proj') else 'N/A',
+            'intermediate_size': layer.mlp.gate_proj.out_features if hasattr(layer.mlp, 'gate_proj') else 'N/A',
+            'head_dim': getattr(layer.self_attn, 'head_dim', 'N/A')
+        }
+    
+    # 4. Create comprehensive summary
+    summary = {
+        'model_info': {
+            'model_name': getattr(model.config, 'name_or_path', 'Unknown'),
+            'num_layers': len(model.model.layers),
+            'hidden_size': model.config.hidden_size,
+            'intermediate_size': getattr(model.config, 'intermediate_size', 'N/A'),
+            'num_attention_heads': model.config.num_attention_heads,
+            'vocab_size': model.config.vocab_size
+        },
+        'pruning_info': pruning_info,
+        'layer_statistics': layer_stats,
+        'weight_statistics': weights_info,
+        'importance_statistics': importance_summary,
+        'total_parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
+        'memory_usage_mb': torch.cuda.memory_allocated() / 1024 / 1024 if torch.cuda.is_available() else 0
+    }
+    
+    # Save summary as JSON
+    summary_file = os.path.join(save_path, "pruning_summary.json")
+    with open(summary_file, 'w') as f:
+        json.dump(summary, f, indent=4)
+    
+    # Save summary as readable text
+    text_summary_file = os.path.join(save_path, "pruning_summary.txt")
+    with open(text_summary_file, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("PRUNING RESULTS SUMMARY\n")
+        f.write("=" * 80 + "\n\n")
+        
+        f.write("MODEL INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        for key, value in summary['model_info'].items():
+            f.write(f"{key:<25}: {value}\n")
+        
+        f.write(f"\nPRUNING INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        for key, value in summary['pruning_info'].items():
+            f.write(f"{key:<25}: {value}\n")
+        
+        f.write(f"\nLAYER STATISTICS:\n")
+        f.write("-" * 40 + "\n")
+        for layer_name, stats in layer_stats.items():
+            f.write(f"\n{layer_name}:\n")
+            for key, value in stats.items():
+                f.write(f"  {key:<20}: {value}\n")
+        
+        f.write(f"\nWEIGHT STATISTICS (Top 10 layers by parameter count):\n")
+        f.write("-" * 40 + "\n")
+        # Sort layers by parameter count
+        sorted_weights = sorted(weights_info.items(), key=lambda x: x[1]['num_params'], reverse=True)
+        for name, stats in sorted_weights[:10]:
+            f.write(f"\n{name}:\n")
+            f.write(f"  Shape: {stats['shape']}\n")
+            f.write(f"  Parameters: {stats['num_params']:,}\n")
+            f.write(f"  Sparsity: {stats['sparsity']:.4f}\n")
+            f.write(f"  Mean: {stats['mean']:.6f}\n")
+            f.write(f"  Std: {stats['std']:.6f}\n")
+    
+    logger.log(f"Pruning results saved to: {save_path}")
+    logger.log(f"- Summary: {summary_file}")
+    logger.log(f"- Text summary: {text_summary_file}")
+    logger.log(f"- Individual weight files: {len(weights_info)} files")
+    if importance_scores:
+        logger.log(f"- Importance scores: {len(importance_scores)} files")
+    
+    return summary_file
     
 def main(args):
     set_random_seed(args.seed)
@@ -93,6 +241,9 @@ def main(args):
 
     logger.log("Use {} pruner...".format(pruner_type))
     
+    # Initialize importance scores storage
+    importance_scores = {}
+    
     if args.block_wise:
         kwargs = {
             "importance": imp,
@@ -150,6 +301,10 @@ def main(args):
                 logger.log("Loss = {}".format(loss))
                 loss.backward()
 
+            # Store importance scores before pruning step
+            if hasattr(imp, 'importance_scores'):
+                importance_scores.update(imp.importance_scores)
+
             pruner.step()
 
             after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -176,18 +331,6 @@ def main(args):
 
         print(f"[Fix] hidden_size={new_hidden}, head_dim={head_dim}, "
               f"num_heads={model.config.num_attention_heads}")
-
-        # # ✅ Fix: update config after block-wise pruning
-        # model.config.hidden_size = model.model.embed_tokens.embedding_dim
-        # model.config.intermediate_size = model.model.layers[0].mlp.gate_proj.out_features
-
-        # # Recompute attention heads so hidden_size % head_dim == 0
-        # head_dim = model.model.layers[0].self_attn.head_dim
-        # new_hidden = model.config.hidden_size
-
-        # model.config.num_attention_heads = new_hidden // head_dim
-        # model.config.num_key_value_heads = model.config.num_attention_heads
-
 
         # Clean the gradient in the model
         model.zero_grad()
@@ -232,6 +375,10 @@ def main(args):
                 logger.log("Loss = {}".format(loss))
                 loss.backward()
 
+            # Store importance scores before pruning step
+            if hasattr(imp, 'importance_scores'):
+                importance_scores.update(imp.importance_scores)
+
             pruner.step()
 
             after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -255,7 +402,32 @@ def main(args):
 
     else:
         raise NotImplementedError
+    
+    after_pruning_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.log("#Param before: {}, #Param after: {}, Ratio = {:.4f}%".format(before_pruning_parameters, after_pruning_parameters,  100.0*after_pruning_parameters/before_pruning_parameters))
+    
+    # Prepare pruning information for saving
+    pruning_info = {
+        'base_model': args.base_model,
+        'pruning_ratio': args.pruning_ratio,
+        'pruner_type': pruner_type,
+        'parameters_before': before_pruning_parameters,
+        'parameters_after': after_pruning_parameters,
+        'compression_ratio': 100.0 * after_pruning_parameters / before_pruning_parameters,
+        'pruning_method': 'block_wise' if args.block_wise else ('channel_wise' if args.channel_wise else 'layer_wise'),
+        'block_attention_layers': f"{args.block_attention_layer_start}-{args.block_attention_layer_end}" if args.block_wise else None,
+        'block_mlp_layers': f"{args.block_mlp_layer_start}-{args.block_mlp_layer_end}" if args.block_wise else None,
+        'iterative_steps': args.iterative_steps,
+        'global_pruning': args.global_pruning,
+        'taylor_method': args.taylor if pruner_type == 'taylor' else None,
+        'num_examples': args.num_examples if pruner_type == 'taylor' else None,
+        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    # Save pruning results if requested
+    if args.save_weights_importance:
+        save_dir = os.path.join('prune_results', args.save_ckpt_log_name)
+        save_pruning_results(model, importance_scores, pruning_info, save_dir, logger)
     
     gc.collect()
     torch.cuda.empty_cache()
@@ -265,6 +437,7 @@ def main(args):
         torch.save({
             'model': model, 
             'tokenizer': tokenizer,
+            'pruning_info': pruning_info
         }, logger.best_checkpoint_path)
     
     if args.eval_device != "cpu":
@@ -351,6 +524,10 @@ if __name__ == "__main__":
 
     parser.add_argument('--seed', type=int, default=42, help='seed')
     parser.add_argument('--save_model', action='store_true', help='if save model')
+    
+    # NEW ARGUMENT FOR SAVING WEIGHTS AND IMPORTANCE
+    parser.add_argument('--save_weights_importance', action='store_true', help='save pruned weights and importance matrix in readable format')
+    
     args = parser.parse_args()
 
     torch_version = float('.'.join(torch.__version__.split('.')[:2]))
