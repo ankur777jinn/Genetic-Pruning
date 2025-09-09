@@ -159,11 +159,34 @@ def main(args):
             for layer in model.model.layers:
                 layer.self_attn.num_heads = layer.self_attn.q_proj.weight.data.shape[0] // layer.self_attn.head_dim
          
-         # ✅ Fix: update config after block-wise pruning
+         # --- FIX CONFIG AFTER PRUNING ---
+        first_layer = model.model.layers[0]
+
+        # update hidden size & intermediate size
         model.config.hidden_size = model.model.embed_tokens.embedding_dim
-        model.config.intermediate_size = model.model.layers[0].mlp.gate_proj.out_features
-        model.config.num_attention_heads = model.model.layers[0].self_attn.num_heads
-        model.config.num_key_value_groups = model.model.layers[0].self_attn.num_key_value_groups
+        model.config.intermediate_size = first_layer.mlp.gate_proj.out_features
+
+        # keep head_dim constant (e.g. 64)
+        head_dim = first_layer.self_attn.head_dim
+        new_hidden = model.config.hidden_size
+
+        # recompute attention heads so reshape works
+        model.config.num_attention_heads = new_hidden // head_dim
+        model.config.num_key_value_heads = model.config.num_attention_heads
+
+        print(f"[Fix] hidden_size={new_hidden}, head_dim={head_dim}, "
+              f"num_heads={model.config.num_attention_heads}")
+
+        # # ✅ Fix: update config after block-wise pruning
+        # model.config.hidden_size = model.model.embed_tokens.embedding_dim
+        # model.config.intermediate_size = model.model.layers[0].mlp.gate_proj.out_features
+
+        # # Recompute attention heads so hidden_size % head_dim == 0
+        # head_dim = model.model.layers[0].self_attn.head_dim
+        # new_hidden = model.config.hidden_size
+
+        # model.config.num_attention_heads = new_hidden // head_dim
+        # model.config.num_key_value_heads = model.config.num_attention_heads
 
 
         # Clean the gradient in the model
@@ -254,7 +277,18 @@ def main(args):
 
     if args.test_after_train:
         logger.log("\n==================Generation Results After Pruning================\n")
-        
+        # =================== FIX CONFIG AFTER PRUNING ===================
+        model.config.hidden_size = model.model.embed_tokens.embedding_dim
+        model.config.intermediate_size = model.model.layers[0].mlp.gate_proj.out_features
+
+        # Compute num_attention_heads dynamically
+        head_dim = model.model.layers[0].self_attn.head_dim
+        model.config.num_attention_heads = model.config.hidden_size // head_dim
+        model.config.num_key_value_heads = model.config.num_attention_heads
+
+        assert model.config.hidden_size % head_dim == 0, "hidden_size must be divisible by head_dim"
+        # ================================================================
+
         model.eval()
         with torch.no_grad():
             for prompt in prompts:
